@@ -1,0 +1,63 @@
+# Threagile as a stage of the GitLab pipeline. Unhandled risks
+# result in a warning (exit code 3 or 4) and the pipeline continues.
+# Technical errors make the job fail.
+
+stages:
+  - threat-model
+
+variables:
+  THREAGILE_MODEL: "threat-model/threagile-example-model.yaml"
+  THREAGILE_OUTPUT: "threagile-output"
+  # In production, pin by digest (Image@sha256:...)
+  THREAGILE_IMAGE: "threagile/threagile:latest"
+  PYTHON_IMAGE: "python:3.12-alpine"
+
+.threagile:
+  stage: threat-model
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: &threagile_changes
+        - $THREAGILE_MODEL
+        - .gitlab-ci.yml
+        - ci/evaluate_threagile_risks.py
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: *threagile_changes
+
+threagile-analyze:
+  extends: .threagile
+  image:
+    name: $THREAGILE_IMAGE
+    entrypoint: [""]
+  script:
+    - mkdir -p "$CI_PROJECT_DIR/$THREAGILE_OUTPUT"
+    # Threagile expects its helper files in the working directory /app
+    - cd /app
+    - >-
+      ./threagile -verbose
+      -model "$CI_PROJECT_DIR/$THREAGILE_MODEL"
+      -output "$CI_PROJECT_DIR/$THREAGILE_OUTPUT"
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - $THREAGILE_OUTPUT/
+
+threagile-evaluate:
+  extends: .threagile
+  image: $PYTHON_IMAGE
+  needs:
+    - job: threagile-analyze
+      artifacts: true
+  script:
+    - >-
+      python3 ci/evaluate_threagile_risks.py
+      --risks "$THREAGILE_OUTPUT/risks.json"
+      --model "$THREAGILE_MODEL"
+      --codequality gl-code-quality-report.json
+  allow_failure:
+    exit_codes: [3, 4]
+  artifacts:
+    expire_in: 30 days
+    reports:
+      codequality: gl-code-quality-report.json

@@ -10,7 +10,7 @@ variables:
   THREAGILE_OUTPUT: "threagile-output"
   # In production, pin by digest (Image@sha256:...)
   THREAGILE_IMAGE: "threagile/threagile:latest"
-  PYTHON_IMAGE: "python:3.12-alpine"
+  PYTHON_IMAGE: "python:3.15-alpine"
 
 .threagile:
   stage: threat-model

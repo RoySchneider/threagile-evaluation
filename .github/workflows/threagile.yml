@@ -38,13 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # docker run instead of a job container: Actions overrides the
-      # entrypoint of job containers. The image runs as UID 1000, the
-      # workspace belongs to the runner user, so run as that user
+      # entrypoint of job containers
       - name: Run Threagile
         run: |
           mkdir -p "$THREAGILE_OUTPUT"
-          docker run --rm --user "$(id -u):$(id -g)" \
-            -v "$GITHUB_WORKSPACE:/app/work" "$THREAGILE_IMAGE" \
+          docker run --rm -v "$GITHUB_WORKSPACE:/app/work" "$THREAGILE_IMAGE" \
             -verbose \
             -model "/app/work/$THREAGILE_MODEL" \
             -output "/app/work/$THREAGILE_OUTPUT"

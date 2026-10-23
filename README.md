@@ -1,10 +1,11 @@
 # threagile-evaluation
 
-Threat modeling with Threagile as a stage of a GitLab pipeline. Unhandled risks trigger a warning, and the pipeline continues.
+Threat modeling with Threagile as a stage of a GitLab pipeline or a GitHub Actions workflow. Unhandled risks trigger a warning, and the pipeline continues.
 
 | File | Contents |
 |---|---|
-| `.gitlab-ci.yml` | Pipeline with the jobs `threagile-analyze` and `threagile-evaluate` |
+| `.gitlab-ci.yml` | GitLab pipeline with the jobs `threagile-analyze` and `threagile-evaluate` |
+| `.github/workflows/threagile.yml` | GitHub Actions workflow with the same two jobs |
 | `ci/evaluate_threagile_risks.py` | Evaluation of `risks.json` |
 | `threat-model/threagile-example-model.yaml` | Example model from Threagile 0.9.1 (`demo/example/threagile.yaml`, in the image as `/app/threagile-example-model.yaml`), unmodified; input of the pipeline |
 
@@ -18,6 +19,17 @@ Threat modeling with Threagile as a stage of a GitLab pipeline. Unhandled risks 
 | 1 | evaluation not possible: file missing, invalid JSON, unknown status or severity | job fails |
 
 Codes 3 and 4 are listed in `allow_failure:exit_codes`. The script also writes `gl-code-quality-report.json`, which GitLab shows in the merge request.
+
+## GitHub Actions
+
+The workflow `.github/workflows/threagile.yml` runs the same two jobs as the GitLab pipeline: `threagile-analyze` starts the Threagile image with `docker run` and uploads `threagile-output/` as an artifact (30 days), and `threagile-evaluate` runs the evaluation script unchanged. Differences from GitLab:
+
+- GitHub has no warning status for jobs. For codes 3 and 4 the job stays green and shows a warning annotation; code 1 makes the job fail.
+- There is no Code Quality widget. The script output appears in the job summary of the run; the Code Quality report is written to a temporary directory and discarded.
+- The schedule is set in the workflow (`cron`, Mondays 03:00 UTC) instead of in the UI. A manual run is possible via *Run workflow* (`workflow_dispatch`).
+- `env` cannot be used in `on:`. When `THREAGILE_MODEL` changes, adjust the `paths:` filters as well.
+
+Actions are pinned by commit SHA.
 
 ## Running locally (PowerShell)
 

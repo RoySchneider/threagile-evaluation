@@ -1,0 +1,90 @@
+# Threagile as a GitHub Actions workflow, alongside .gitlab-ci.yml.
+# GitHub has no allow_failure:exit_codes: unhandled risks (exit code
+# 3 or 4) become a warning annotation and the job stays green.
+# Technical errors make the job fail.
+
+name: threagile
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  # env cannot be used here; keep the paths in sync with THREAGILE_MODEL
+  pull_request:
+    paths:
+      - threat-model/threagile-example-model.yaml
+      - .github/workflows/threagile.yml
+      - ci/evaluate_threagile_risks.py
+  push:
+    branches: [master]
+    paths:
+      - threat-model/threagile-example-model.yaml
+      - .github/workflows/threagile.yml
+      - ci/evaluate_threagile_risks.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  THREAGILE_MODEL: "threat-model/threagile-example-model.yaml"
+  THREAGILE_OUTPUT: "threagile-output"
+  # In production, pin by digest (Image@sha256:...)
+  THREAGILE_IMAGE: "threagile/threagile:latest"
+  PYTHON_VERSION: "3.15"
+
+jobs:
+  threagile-analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # docker run instead of a job container: Actions overrides the
+      # entrypoint of job containers
+      - name: Run Threagile
+        run: |
+          mkdir -p "$THREAGILE_OUTPUT"
+          docker run --rm -v "$GITHUB_WORKSPACE:/app/work" "$THREAGILE_IMAGE" \
+            -verbose \
+            -model "/app/work/$THREAGILE_MODEL" \
+            -output "/app/work/$THREAGILE_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: threagile-output
+          path: ${{ env.THREAGILE_OUTPUT }}/
+          retention-days: 30
+
+  threagile-evaluate:
+    runs-on: ubuntu-latest
+    needs: threagile-analyze
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: threagile-output
+          path: ${{ env.THREAGILE_OUTPUT }}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      # The script output goes to the job summary; the Code Quality
+      # report is only used by GitLab and is discarded here
+      - name: Evaluate risks
+        run: |
+          set +e
+          python3 ci/evaluate_threagile_risks.py \
+            --risks "$THREAGILE_OUTPUT/risks.json" \
+            --model "$THREAGILE_MODEL" \
+            --codequality "$RUNNER_TEMP/gl-code-quality-report.json" \
+            > "$RUNNER_TEMP/evaluate.log" 2>&1
+          code=$?
+          cat "$RUNNER_TEMP/evaluate.log"
+          {
+            echo "### Threagile (Exit-Code $code)"
+            echo '```'
+            cat "$RUNNER_TEMP/evaluate.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$code" in
+            0) ;;
+            3|4) echo "::warning title=Threagile::Unbehandelte Risiken (Exit-Code $code), siehe Zusammenfassung" ;;
+            *) exit "$code" ;;
+          esac

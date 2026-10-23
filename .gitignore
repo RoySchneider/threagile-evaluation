@@ -1,5 +1,6 @@
 .venv/
 .idea/
 __pycache__/
-threagile-output/
+threagile-output/*
+!threagile-output/.gitkeep
 gl-code-quality-report.json
